@@ -1,0 +1,912 @@
+// 라이브러리 불러오기
+var multer = require("multer");
+// const multerConfig = {
+//   storage: multer.diskStorage({
+//     destination: function (req, file, next) {
+//       next(null, "./public/zip-storage");
+//     },
+//     filename: function (req, file, next) {
+//       console.log(file);
+//       const ext = file.mimetype.split("/")[1];
+//       next(null, file.fieldname + "-" + Date.now() + "." + ext);
+//     },
+//   }),
+
+//   fileFilter: function (req, file, next) {
+//     if (!file) {
+//       next();
+//     }
+
+//     const zip = file.mimetype.startsWith("image");
+//     if (zip) {
+//       console.log("image uploaded");
+//       next(null, true);
+//     } else {
+//       console.log("file not supported");
+//       errorReq = true;
+//       return next();
+//     }
+//   },
+// };
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: function (req, file, cb) {
+      cb(null, "public/img");
+    },
+    filename: function (req, file, cb) {
+      var newFileName = new Date().valueOf() + path.extname(file.originalname);
+      cb(null, newFileName);
+    },
+  }),
+});
+
+
+const express = require("express");
+const router = require("express").Router();
+const path = require("path");
+var bodyParser = require("body-parser");
+const app = express();
+const http = require("http").createServer(app);
+const port = 3001;
+var connection = require("./db");
+var jwt = require("jsonwebtoken");
+
+// 3001번 포트에서 서버를 실행
+http.listen(port, () => {
+  // 서버가 정상적으로 실행되면 콘솔창에 이 메시지를 띄움
+  console.log("Listening on " + port);
+});
+
+app.use(express.static(path.join(__dirname, "/build")));
+// 메인페이지 접속 시 build 폴더의 index.html 보냄
+app.get("/", (res, req) => {
+  req.sendFile(path.join(__dirname, "/build/index.html"));
+});
+
+const cors = require("cors");
+const { resolve } = require("path");
+router.use(cors());
+app.use((error, req, res, next) => {
+  console.log("This is the rejected field ->", error.field);
+});
+
+app.use(express.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+//배열 쿼리 입력시에 필요함
+if (process.env.NODE_ENV === 'production') {
+  app.use(hpp()); // hpp 모듈
+}
+
+// 회원 관련(서버분이 추가수정)
+//로그인
+app.post("/auth/login", (req, res) => {
+  //login(): POST {username, password} & save JWT to Local Storage
+  //위처럼 프론트엔드에서는 {username, password}를 서버로 전달하고 서버에서는 {username, password}와 JWT를 생성하여 db에 저장하고
+  // 생성된 JWT를 프론트엔드로 줘야함.
+  //아래는 임시로 사용자가 db에 있다고 생각하고 임시 JWT를 무조건 부여한거라 지우고 맞는 코드 작성해야함.
+  var token = jwt.sign(
+    { id: req.id },
+    "eyJhbGciOiJIUzI1NiJ9.eyJSb2xlIjoiQWRtaW4iLCJJc3N1ZXIiOiJJc3N1ZXIiLCJVc2VybmFtZSI6IkphdmFJblVzZSIsImV4cCI6MTY2NzU0OTM3MSwiaWF0IjoxNjY3NTQ5MzcxfQ.BIKdQpm2XvSg39S6oGSBVGz-SsJCh51waAeQBSxbLX4",
+    {
+      expiresIn: 86400, // 24 hours
+    }
+  );
+  //아래부분은 임의의 데이터이기에 원래는 서버에서 데이터를 받아서 로그인할때마다 유동적으로 바뀌어야함.
+  
+  //이거 때문에 수정 데이터 안바뀜
+
+  // console.log(err);
+  // console.log(err);
+  let sql = "SELECT * FROM guest WHERE memberID=? AND memberPW=?";
+  connection.query(sql, [req.body.id, req.body.password], function (err, results, fields) { 
+    if (err) {
+      console.log(err);
+      throw err;
+    } else if(results=="") { //그런 사람 없다
+      //alert("해당 아이디가 존재하지 않습니다.");
+      res.status(404).send({ message: "해당 아이디가 존재하지 않습니다." });
+      //res.sendStatus(404);
+    } else { //아이디 비번 코드 이름 스타일12
+      res.status(200).send({
+        id: results[0].memberID,
+        password: results[0].memberPW,
+        username: results[0].name,
+        style_1: results[0].style1,
+        style_2: results[0].style2,
+        accessToken: token,
+      });
+    }
+  });
+});
+
+//회원가입
+app.post("/auth/register", (req, res) => {
+  //id가 db에 이미 존재하면 오류 던져줘야함!!!!!!!!!
+  //회원가입 id와 password db에 등록
+  // console.log(req.body);
+
+  sql = "SELECT * FROM guest WHERE memberID=?";
+  // guest테이블에 있는 아이디인가?
+  connection.query(sql, req.body.id, function (err, results, fields) { 
+    if (err) {
+      console.log(err); // 조회결과가 없는건 에러가 아님
+      throw err;
+    } else if (results!=""){ // 그런옷 없다
+      console.log(results);
+      // 이거 오류로 보내야함
+      res.send({ message: "존재하는 아이디입니다." });
+    } 
+  });
+
+  tmp = [req.body.id, req.body.password, req.body.id, req.body.username, req.body.style_1, req.body.style_2];
+  sql = "insert into guest value (?, ?, ?, ?, ?, ?)";
+  connection.query(sql, tmp, function (err, results, fields) { 
+    if (err) {
+      console.log("-err: "+err);
+      throw err;
+    } else {
+      console.log("-results: "+results);
+      console.log("추가완료");
+      res.status(200).send({
+        // id: req.body.id,
+        // username: req.body.username,
+        // style_: req.body.style_1,
+        // style_2: req.body.style_2,
+        message: "회원가입이 완료되었습니다!",
+      });
+  }});
+});
+// 회원 정보 수정
+app.post("/auth/update/", function (req, res) { //레지스터서버랑같게
+  //user의 id를 가지고 data를 업데이트하여야함
+  //업데이트 후에 업데이트 된 데이터를 res에 담아서 프론트에 줌.
+  console.log("-----테스트 중-----");
+
+  console.log(req.body);
+  tmp = [req.body.username, req.body.password, req.body.style_1, req.body.style_2, req.body.id];
+  sql = "update guest SET name=?, memberPW=?, style1=?, style2=? WHERE memberCode=?";
+  console.log(tmp);
+
+  connection.query(sql, tmp, function (err, results, fields) { 
+    if (err) {
+      console.log("-err: "+err);
+      res.status(404).send({
+        id: req.body.id, // aaaaa
+        username: req.body.username, // 테크모
+        password: req.body.password, // aaa
+        style_1: req.body.style_1, // 고른거
+        style_2: req.body.style_2, // chic
+        message: "회원정보수정이 실패했습니다.",
+      });
+    } else if (!results.changedRows){
+      res.status(400).send({
+        id: req.body.id, // aaaaa
+        username: req.body.username, // 테크모
+        password: req.body.password, // aaa
+        style_1: req.body.style_1, // 고른거
+        style_2: req.body.style_2, // chic
+        message: "변경된 값이 없습니다.",
+      });
+    } else {
+      console.log("-results: "+results[0]);
+      console.log("수정완료");
+
+      res.status(200).send({
+        id: req.body.id, // aaaaa
+        username: req.body.username, // 테크모
+        password: req.body.password, // aaa
+        style_1: req.body.style_1, // 고른거
+        style_2: req.body.style_2, // chic
+        message: "회원정보수정이 완료되었습니다!",
+      });
+  }});
+});
+//로그아웃
+app.post("/auth/logout", (req, res) => {
+  console.log("로그아웃 성공");
+
+  res.send(req.body);
+});
+//회원 탈퇴
+app.delete("/auth/delete/:id", (req, res) => {
+  console.log(req.params.id+"회원 삭제 요청");
+  sql= "DELETE FROM guest WHERE memberID=?";
+  connection.query(sql, req.params.id, function(err, results, fields) { 
+    if (err) {
+      console.log(err);
+      throw err;
+    } else {
+      sql= "DELETE FROM mytop WHERE memberID=?";
+      connection.query(sql, req.params.id, function(err, results, fields) { 
+        if (err) {
+          console.log(err);
+          throw err;
+        } else {
+          console.log("상의삭제");
+        }
+      });
+
+      sql= "DELETE FROM mybottom WHERE memberID=?";
+      connection.query(sql, req.params.id, function(err, results, fields) { 
+        if (err) {
+          console.log(err);
+          throw err;
+        } else {
+          console.log("하의삭제");
+        }
+      });
+
+      sql= "DELETE FROM cody WHERE memberID=?";
+      connection.query(sql, req.params.id, function(err, results, fields) { 
+        if (err) {
+          console.log(err);
+          throw err;
+        } else {
+          console.log("코디삭제");
+        }
+      });
+
+      console.log("회원 탈퇴 성공");
+    }
+  });
+  //db에서 id 삭제
+  res.sendStatus(204);
+});
+
+// 옷 등록 img 개선판
+app.use(express.static("public/img"));
+app.post("/cloth/add", upload.single("img"), function (req, res) {
+  console.log("개선판 실행");
+  // multer(multerConfig).single("img"), 원래이거
+  var file = req.file.filename;
+  // console.log(req.file.filename);
+  // res.send(`
+  //       <h1>Image Upload Successfully</h1>
+  //       <a href="/">Back</a>
+  //       <p><img src="${file}" alt="image 출력"/></p>`);
+  console.log("--------------"+file);
+
+  // all테이블 쿼리용
+  let sql, sql2, sort;
+  let category = req.body.category; //top outer one bottom
+  if (category == "coat"||category == "shirt"||category == "jacket"||category == "dress"||category == "suit") { //?
+    sql = "SELECT * FROM alltop WHERE topType=? AND topColor=?";
+    sql2 = "insert into alltop(topCode, topType, topColor) values (?, ?, ?);";
+    if(category == "dress"||category == "suit") {sort="one";}
+    else if(category == "coat"||category == "jackets"){sort="outer";}
+    else {sort="top";}
+  } else {
+    sql = "SELECT * FROM allbottom WHERE bottomType=? AND bottomColor=?";
+    sql2 = "insert into allbottom(bottomCode, bottomType, bottomColor) values (?, ?, ?);";
+    sort="bottom";
+  }
+
+  // all테이블에 있는 옷인가?
+  connection.query(sql, [req.body.category, req.body.color], function (err, results, fields) { 
+    if (err) {
+      console.log(err); // 조회결과가 없는건 에러가 아님
+      throw err;
+    } else if (results==""){ // 그런옷 없다
+      console.log(results);
+      // insert
+      connection.query(sql2, [req.body.id, req.body.category, req.body.color], function (err, results, fields) { 
+        if (err) {
+          console.log("-err: "+err);
+          throw err;
+        } else {
+          console.log("-results: "+results);
+          console.log("all* 추가완료");
+      }});
+    } else { // 에러 안나고 옷도 있음
+      console.log("옷있음: "+results);
+  }});
+
+  // mycloth insert
+  if(sort=="bottom"){
+    tmp = [req.body.userId, req.body.id, req.body.category, req.body.color, file];
+    sql = "insert into mybottom value (?, ?, ?, ?, ?)";
+  } else {
+    tmp = [req.body.userId, req.body.id, sort, req.body.category, req.body.color, file];
+    sql = "insert into mytop value (?, ?, ?, ?, ?, ?)";
+  }
+  connection.query(sql, tmp, function (err, results, fields) { 
+    if (err) {
+      console.log("-err: "+err);
+      throw err;
+    } else {
+      console.log("-results: "+results);
+      console.log("추가완료");
+      res.sendStatus(201);
+  }});
+});
+
+// 옷(아우터,상의,하의) 조회 //사용자의 id 필요(현재query가정)
+app.get("/cloth/outers", (req, res) => {
+  var resCloth = [];
+  let sql = "SELECT * FROM mytop WHERE memberID=? AND topSort='outer'"; // ??
+  connection.query(sql, req.query.id ,function(err, results, fields) { 
+    if (err) {
+      console.log(err);
+      throw err;
+    }
+    for (var i in results) {
+      resCloth[i] = {
+        id: results[i].topCode,
+        // code: results[i].clothCode,
+        category: results[i].topType,
+        color: results[i].topColor,
+        pictureAsFile: results[i].topImage,
+      }
+    }
+
+    res.status(200).send(resCloth);
+  });
+});
+app.get("/cloth/tops", (req, res) => {
+  var resCloth = [];
+  let sql = "SELECT * FROM mytop WHERE memberID=? AND topSort='top'"; // ??
+  connection.query(sql, req.query.id, function(err, results, fields) { 
+    if (err) {
+      console.log(err);
+      throw err;
+    }
+    for (var i in results) {
+      resCloth[i] = {
+        id: results[i].topCode,
+        // code: results[i].clothCode,
+        category: results[i].topType,
+        color: results[i].topColor,
+        pictureAsFile: results[i].topImage,
+      }
+    }
+
+    res.status(200).send(resCloth);
+  });
+});
+app.get("/cloth/bottoms", (req, res) => {
+  var resCloth = [];
+  let sql = "SELECT * FROM mybottom WHERE memberID=?"; // ??
+  connection.query(sql, req.query.id, function(err, results, fields) { 
+    if (err) {
+      console.log(err);
+      throw err;
+    }
+    for (var i in results) {
+      resCloth[i] = {
+        id: results[i].bottomCode,
+        // code: results[i].clothCode,
+        category: results[i].bottomType,
+        color: results[i].bottomColor,
+        pictureAsFile: results[i].bottomImage,
+      }
+    }
+
+    res.status(200).send(resCloth);
+  });
+});
+
+// 옷(아우터,상의,하의) 한벌 조회(서버분이 추가수정)
+// 유저아이디는 query id, 옷아이디는 param id? 
+app.get("/cloth/outer/:id", (req, res) => {
+  var resCloth;
+  console.log(req.query.id);
+  console.log(req.params.id);
+  let sql = "SELECT * FROM mytop WHERE memberID=? AND topCode=? AND topSort='outer'";
+  connection.query(sql, [req.query.id, req.params.id], function(err, results, fields) { 
+    if (err) {
+      console.log(err);
+      throw err;
+    }
+    resCloth = {
+      id: req.query.id,
+      //code: results.clothCode,
+      category: results[0].topType,
+      color: results[0].topColor,
+      pictureAsFile: results[0].topImage,
+    }
+    res.status(200).send(resCloth);
+  });
+});
+app.get("/cloth/top/:id", (req, res) => {
+  var resCloth;
+  let sql = "SELECT * FROM mytop WHERE memberID=? AND topCode=? AND topSort='top'";
+  connection.query(sql, [req.query.id, req.params.id], function(err, results, fields) { 
+    if (err) {
+      console.log(err);
+      throw err;
+    }
+    resCloth = {
+      id: results[0].memberID,
+      //code: results.clothCode,
+      category: results[0].topType,
+      color: results[0].topColor,
+      pictureAsFile: results[0].topImage,
+    }
+    res.status(200).send(resCloth);
+  });
+});
+app.get("/cloth/bottom/:id", (req, res) => {
+  var resCloth;
+  let sql = "SELECT * FROM mybottom WHERE memberID=? AND bottomCode=?";
+  connection.query(sql, [req.query.id, req.params.id], function(err, results, fields) { 
+    if (err) {
+      console.log(err);
+      throw err;
+    }
+    resCloth = {
+      id: results[0].memberID,
+      //code: results.clothCode,
+      category: results[0].bottomType,
+      color: results[0].bottomColor,
+      pictureAsFile: results[0].bottomImage,
+    }
+    res.status(200).send(resCloth);
+  });
+});
+
+// 옷(아우터,상의,하의) 삭제(서버분이 추가수정)
+// 일단 이 코드는 req.query로 가정하고 작성되었습니다
+// 굳이 DELETE 메서드를 고집할 필요가 없다면, Request body에 필요한 정보를 
+// 담고, POST 메서드 요청 메세지를 보내는 것도 나쁘지 않은 방법입니다.
+// 옷 삭제할때 코디도 날리기 < 시간남으면
+app.delete("/cloth/outers/", (req, res) => {
+  console.log("delete 요청");
+  if(Array.isArray(req.query.delete)){ //배열이면(여러개면)
+    for(var i=0; req.query.delete[i]!=undefined;){
+      let deletePromise = new Promise((resolve, reject) => {
+        sql = "DELETE FROM mytop WHERE topSort='outer' AND memberID=? AND topCode=?";
+        tmp = [req.query.memberID, req.query.delete[i]];
+        connection.query(sql, tmp, function(err, results, fields) { 
+          if (err) {
+            console.log(err);
+            reject(err);
+          }
+          console.log("delete");
+          resolve(results);
+        });
+      });
+      deletePromise.then(
+        async (rst) => {
+          tmp = [req.query.delete[i], req.query.memberID];
+          sql = "DELETE FROM cody WHERE outerCode=? AND memberID=?";
+          connection.query(sql, tmp, function (err, results, fields) { // 코디 삭제
+            if (err) {
+              console.log(err);
+              throw err;
+            }
+            console.log("실행함");
+            i++;
+          });
+        }
+      );
+    }
+  } else {
+    let deletePromise = new Promise((resolve, reject) => {
+      sql = "DELETE FROM mytop WHERE topSort='outer' AND memberID=? AND topCode=?";
+      tmp = [req.query.memberID, req.query.delete];
+      connection.query(sql, tmp, function(err, results, fields) { 
+        if (err) {
+          console.log(err);
+          reject(err);
+        }
+        console.log("delete");
+        resolve(results);
+      });
+    });
+    deletePromise.then( // then의 then이 안된다니까? 하아 코드꼬라지
+      async (rst) => {
+        tmp = [req.query.delete, req.query.memberID];
+        sql = "DELETE FROM cody WHERE outerCode=? AND memberID=?";
+        connection.query(sql, tmp, function (err, results, fields) { // 코디 삭제
+          if (err) {
+            console.log(err);
+            throw err;
+          }
+          console.log("실행함");
+          res.sendStatus(204);
+        });
+      }
+    );
+  }// 204 응답은 원래 안가? 실행은 됐을건디 안가는게 정상인갑다
+});
+app.delete("/cloth/tops/", (req, res) => {
+  console.log("delete 요청");
+  if(Array.isArray(req.query.delete)){ //배열이면(여러개면)
+    for(var i=0; req.query.delete[i]!=undefined; i++){
+      let deletePromise = new Promise((resolve, reject) => {
+        sql = "DELETE FROM mytop WHERE topSort='top' AND memberID=? AND topCode=?";
+        tmp = [req.query.memberID, req.query.delete[i]];
+        connection.query(sql, tmp, function(err, results, fields) { 
+          if (err) {
+            console.log(err);
+            reject(err);
+          }
+          console.log("delete");
+          resolve(results);
+        });
+      });
+      deletePromise.then(
+        async (rst) => {
+          tmp = [req.query.delete[i], req.query.memberID];
+          sql = "DELETE FROM cody WHERE topCode=? AND memberID=?";
+          connection.query(sql, tmp, function (err, results, fields) { // 코디 삭제
+            if (err) {
+              console.log(err);
+              throw err;
+            }
+            console.log("실행함");
+            i++;
+          });
+        }
+      );
+    }
+  } else {
+    let deletePromise = new Promise((resolve, reject) => {
+      sql = "DELETE FROM mytop WHERE topSort='top' AND memberID=? AND topCode=?";
+      tmp = [req.query.memberID, req.query.delete];
+      connection.query(sql, tmp, function(err, results, fields) { 
+        if (err) {
+          console.log(err);
+          reject(err);
+        }
+        console.log("delete");
+        resolve(results);
+      });
+    });
+    deletePromise.then(
+      async (rst) => {
+        tmp = [req.query.delete, req.query.memberID];
+        sql = "DELETE FROM cody WHERE topCode=? AND memberID=?";
+        connection.query(sql, tmp, function (err, results, fields) { // 코디 삭제
+          if (err) {
+            console.log(err);
+            throw err;
+          }
+          console.log("실행함");
+          res.sendStatus(204);
+        });
+      }
+    );
+  }
+});
+app.delete("/cloth/bottoms/", (req, res) => {
+  console.log("delete 요청");
+  if(Array.isArray(req.query.delete)){ //배열이면(여러개면)
+    for(var i=0; req.query.delete[i]!=undefined; i++){
+      let deletePromise = new Promise((resolve, reject) => {
+        sql = "DELETE FROM mybottom WHERE memberID=? AND bottomCode=?";
+        tmp = [req.query.memberID, req.query.delete[i]];
+        connection.query(sql, tmp, function(err, results, fields) { 
+          if (err) {
+            console.log(err);
+            reject(err);
+          }
+          console.log("delete");
+          resolve(results);
+        });
+      });
+      deletePromise.then(
+        async (rst) => {
+          tmp = [req.query.delete[i], req.query.memberID];
+          sql = "DELETE FROM cody WHERE bottomCode=? AND memberID=?";
+          connection.query(sql, tmp, function (err, results, fields) { // 코디 삭제
+            if (err) {
+              console.log(err);
+              throw err;
+            }
+            console.log("실행함");
+            i++;
+          });
+        }
+      );
+    }
+  } else {
+    let deletePromise = new Promise((resolve, reject) => {
+      sql = "DELETE FROM mybottom WHERE memberID=? AND bottomCode=?";
+      tmp = [req.query.memberID, req.query.delete];
+      connection.query(sql, tmp, function(err, results, fields) { 
+        if (err) {
+          console.log(err);
+          reject(err);
+        }
+        console.log("delete");
+        resolve(results);
+      });
+    });
+    deletePromise.then(
+      async (rst) => {
+        tmp = [req.query.delete, req.query.memberID];
+        sql = "DELETE FROM cody WHERE bottomCode=? AND memberID=?";
+        connection.query(sql, tmp, function (err, results, fields) { // 코디 삭제
+          if (err) {
+            console.log(err);
+            throw err;
+          }
+          console.log("실행함");
+          res.sendStatus(204);
+        });
+      }
+    );
+  }
+});
+
+// 코디 등록(서버분이 추가수정)
+app.post("/cody/add", (req, res) => {
+  // console.log(req.body);
+  // console.log("received the request");
+  // res.send(req.body);
+  // 매치탑아우터바텀유저
+  tmp = [req.body.codyId, req.body.topId, req.body.outerId, req.body.bottomId, req.body.userId];
+  sql = "insert into cody value (?, ?, ?, ?, ?)";
+  connection.query(sql, tmp, function (err, results, fields) { 
+    if (err) {
+      console.log("-err: "+err);
+      throw err;
+    } else {
+      res.sendStatus(201);
+  }});
+});
+// 코디 조회(서버분이 추가수정)
+app.get("/cody/codys", (req, res) => {
+  console.log("cody request"+req.query.id);
+  var resCody = [];
+  var length;
+
+  let selectPromise = new Promise((resolve, reject) => {
+    let sql = "SELECT * FROM cody WHERE memberID=?"; // 1차
+    connection.query(sql, req.query.id, function(err, results, fields) { 
+      if (err) {
+        console.log(err);
+        reject(err);
+      } else if (results==""){ 
+        // 있는 코디가 없다
+      } else {
+        console.log(results);
+        for(var i=0; i<results.length; i++){ // for (var i in results) { //비동기가 밉다...,
+          resCody[i] = {
+            codyId: results[i].matchCode,
+            bottomId: results[i].bottomCode,
+            //pictureAsFile_bottom: tmp[2],
+            outerId: results[i].outerCode,
+            // pictureAsFile_outer: tmp[1],
+            topId: results[i].topCode,
+            //pictureAsFile_top:tmp[0],
+          }
+        }
+        length=results.length;
+        resolve(results);
+      }
+    });
+  }); // 여기까진 문제없음 이거 돌고 selectpromise then 돌테니까
+
+  // for(var i=0; i<length; i++){
+  selectPromise.then( // then의 then이 안된다니까? 하아 코드꼬라지
+    async (results) => { // 리턴받는것은 select의 결과
+      i=0;
+      for (const data of results) {
+        // console.log("i :"+i+" results :"+results.length+" results[i] :"+results[i].matchCode); 
+        // console.log("i :"+i+" top :"+results[i].topCode+" outer :"+results[i].outerCode); 
+        tmp=[]; //이미지담기
+        if(data.topCode) { // 탑 있냐
+          if(data.outerCode) { // 아우터 있냐 //tob 시작
+            sql= "select mytop.topImage, mybottom.bottomImage, cody.* from mytop, mybottom, cody where mytop.memberID=? and mytop.topCode=? and mybottom.memberID=? and mybottom.bottomCode=? and cody.topCode=? and cody.outerCode=? and cody.bottomCode=?";
+            value = [req.query.id, data.topCode, req.query.id, data.bottomCode, data.topCode, data.outerCode, data.bottomCode];
+            let tobPromise = new Promise((resolve, reject) => {
+              connection.query(sql, value, function(err2, results2, fields2) { //상의+하의
+                if (err2) {
+                  console.log(err2);
+                  reject(err2);
+                } else {
+                  console.log(i+". t+o+b");
+                  console.log(i+". 탑이미지 :"+results2[0].topImage);
+                  tmp[0]=results2[0].topImage;
+                  console.log(i+". 바텀이미지 :"+results2[0].bottomImage);
+                  tmp[2]=results2[0].bottomImage;
+
+                  resCody[i].pictureAsFile_bottom=tmp[2];
+                  resCody[i].pictureAsFile_top=tmp[0];
+
+                  resolve(results2[0].outerCode);
+                }
+              });
+            });
+          
+            tobPromise.then(
+              (result) => {
+                sql= "SELECT * FROM mytop WHERE topCode=?";
+                connection.query(sql, result, function(err3, results3, fields3) { // 아우터
+                  if (err3) {
+                    console.log(err3);
+                    throw err3;
+                  } else {
+                    console.log(i+". 아우터이미지 :"+results3[0].topImage);
+                    tmp[1]=results3[0].topImage;
+                    
+                    resCody[i].pictureAsFile_outer=tmp[1];
+                    i+=1; // 이게 문제였어!!!! 아!!!!!!!!!!
+                  }
+                });
+              }, (err)=>{
+                console.log("-err"+err);
+                res.send(err);
+              }
+            ); // tob 종료
+          } else { // tb 시작
+            sql= "select mytop.topImage, mybottom.bottomImage, cody.* from mytop, mybottom, cody where mytop.memberID=? and mytop.topCode=? and mybottom.memberID=? and mybottom.bottomCode=? and cody.topCode=? and cody.bottomCode=?";
+            value = [req.query.id, data.topCode, req.query.id, data.bottomCode, data.topCode, data.bottomCode];
+            connection.query(sql, value, function (err2, results2, fields2) {
+              if (err2) {
+                console.log(err2);
+                throw err2;
+              }
+              console.log(i+". t+b");
+              console.log(i+". 탑이미지2 :" + results2[0].topImage);
+              tmp[0] = results2[0].topImage;
+
+              console.log(i+". 바텀이미지2 :" + results2[0].bottomImage);
+              tmp[2] = results2[0].bottomImage;
+
+              // console.log("r: "+results2[0].matchCode); //1 왜없어지지
+              // console.log(i+"tmp bottom:"+tmp[2]);
+              resCody[i].pictureAsFile_bottom = tmp[2];
+              resCody[i].pictureAsFile_top = tmp[0];
+
+              i+=1;
+            }); // tb 종료
+          }
+        } else { // ob 시작
+          sql= "select mytop.topImage, mybottom.bottomImage, cody.* from mytop, mybottom, cody where mytop.memberID=? and mytop.topCode=? and mybottom.memberID=? and mybottom.bottomCode=? and cody.outerCode=? and cody.bottomCode=?";
+          value = [req.query.id, data.outerCode, req.query.id, data.bottomCode, data.outerCode, data.bottomCode];
+          connection.query(sql, value, function(err2, results2, fields2) {  //아우터+하의
+            if (err2) {
+              console.log(err2);
+              throw err2;
+            } else {
+              console.log(i+". o+b");
+              console.log(i+". 아우터이미지3 :"+results2[0].topImage); 
+              tmp[1]=results2[0].topImage;
+            
+              console.log(i+". 바텀이미지3 :"+results2[0].bottomImage);
+              tmp[2]=results2[0].bottomImage;
+
+              //console.log("r: "+results[i]);
+              console.log("tmp bottom:"+tmp[2]);
+              resCody[i].pictureAsFile_bottom=tmp[2];
+              resCody[i].pictureAsFile_outer=tmp[1];
+              
+              i+=1;
+            }
+          }); 
+        } // ob 종료
+      }
+    });
+//} // for 끝
+  setTimeout(()=>{res.status(200).send(resCody);},2500); // 제 부덕으로 인해 비동기를 편법으로 회피합니다
+});
+async function runQuery(sql, tmp) {
+  connection.query(sql, tmp, function (err, results, fields) { 
+    if (err) {
+        console.log("-err: "+err);
+        reject(err);
+      } 
+        console.log("-results: "+results[0]);
+        resolve(results);
+  });
+}
+// 코디 삭제(서버분이 추가수정) 
+// 사실 delete params 받아도 안쓰고 query씀 보내는것도 query로 보냈고
+app.delete("/cody/codys/", (req, res) => {
+  if(Array.isArray(req.query.delete)){ //배열이면(여러개면)
+    for(var i=0; req.query.delete[i]!=undefined; i++){
+      tmp = [req.query.memberID, req.query.delete[i]];
+      console.log(tmp);
+      let sql = "DELETE FROM cody WHERE memberID=? AND matchCode=?";
+      connection.query(sql, tmp, function (err, results, fields) { 
+        if (err) {
+            console.log(err);
+            throw err;
+        }
+        console.log("실행됨");
+        res.sendStatus(204);
+      });
+    }
+  } else {
+    tmp = [req.query.memberID, req.query.delete];
+    console.log(tmp);
+    let sql = "DELETE FROM cody WHERE memberID=? AND matchCode=?";
+    connection.query(sql, tmp, function (err, results, fields) { 
+      if (err) {
+          console.log(err);
+          throw err;
+      }
+      console.log("실행됨");
+      res.sendStatus(204);
+    });
+  }
+});
+
+/////////////////////////추천 관련/////////////////////////
+// 사용자 옷 기반 추천 코디 조회(서버분이 추가수정)
+app.get("/recommend/clothbased", (req, res) => { // query id에 유저id
+  closetCody = [];
+  sql = "select mytop.*, mybottom.* from lookbook, mytop, mybottom "
+    + "where mytop.memberID = ? and mybottom.memberID = ? and lookbook.topType = mytop.topType "
+      + "and lookbook.bottomType = mybottom.bottomType "
+      + "and lookbook.topColor = mytop.topColor and lookbook.bottomColor = mybottom.bottomColor "
+      + "order by Rand() LIMIT 3";
+  tmp = [req.query.id, req.query.id];
+  connection.query(sql, tmp, function (err, results, fields) { 
+    if (err) {
+      console.log(err);
+      throw err;
+    }
+    console.log("실행됨/");
+    for(var i in results){
+      closetCody[i] = {
+        codyId: results[i].topCode,
+        outerId: results[i].topCode,
+        pictureAsFile_outer: results[i].topImage,
+        bottomId: results[i].bottomCode,
+        pictureAsFile_bottom: results[i].bottomImage,
+      }
+    }
+
+    res.status(200).send(closetCody);
+  });
+});
+// 선호스타일1 기반 추천 코디 조회
+// 멤버아이디에 맞는 룩북 3개 랜덤들고오기
+app.get("/recommend/stylebased1", (req, res) => { // query id에 유저id
+  lookbook = [];
+  sql = "select lookbook.* from lookbook, mytop, mybottom "
+    + "where mytop.memberID = ? and mybottom.memberID = ? and lookbook.topType = mytop.topType and " 
+    + "lookbook.bottomType = mybottom.bottomType and lookbook.style = ? order by Rand() LIMIT 5";  
+  tmp = [req.query.id, req.query.id, req.query.style];
+  console.log(tmp);
+  connection.query(sql, tmp, function (err, results, fields) { 
+    if (err) {
+        console.log(err);
+        throw err;
+    }
+    console.log("실행됨");
+    for(var i in results){
+      lookbook[i] = {
+        codyId: results[i].lookbookCode,
+        styleName: results[i].style,
+        pictureAsFile_outer: results[i].lookbookImage,
+      }
+    }
+
+    res.status(200).send(lookbook);
+  });
+});
+// 선호스타일2 기반 추천 코디 조회(서버분이 추가수정)
+app.get("/recommend/stylebased2", (req, res) => { // query id에 유저id
+  lookbook2 = [];
+  var sql = "select lookbook.* from lookbook, mytop, mybottom "
+    + "where mytop.memberID = ? and mybottom.memberID = ? and lookbook.topType = mytop.topType and " 
+    + "lookbook.bottomType = mybottom.bottomType and lookbook.style = ? order by Rand() LIMIT 5";  
+  tmp = [req.query.id, req.query.id, req.query.style];
+  console.log(tmp);
+  connection.query(sql, tmp, function (err, results, fields) { 
+    if (err) {
+        console.log(err);
+        throw err;
+    }
+    console.log("실행됨");
+    for(var i in results){
+      lookbook2[i] = {
+        codyId: results[i].lookbookCode,
+        styleName: results[i].style,
+        pictureAsFile_outer: results[i].lookbookImage,
+      }
+    }
+    setTimeout(() => {
+      
+    }, 1000);
+
+    res.status(200).send(lookbook2);
+  });
+});
