@@ -3,7 +3,7 @@ const mysql = require('mysql');  // mysql 모듈 로드
 //커넥션풀과 이거중에서 고민해보기 이것도 잘도는데...
 const conn = {  // mysql 접속 설정
     host: 'localhost',
-    port: '3306',
+    // port: '3306',
     user: 'root',
     password: '135135',
     database: 'database_development'
